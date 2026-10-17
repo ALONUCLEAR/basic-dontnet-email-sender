@@ -25,6 +25,7 @@ string SENDER_EMAIL = Environment.GetEnvironmentVariable("SENDER_EMAIL") ?? "";
 string SENDER_APP_PASSWORD = Environment.GetEnvironmentVariable("SENDER_APP_PASSWORD") ?? "";
 string SMTP_HOST = Environment.GetEnvironmentVariable("SMTP_HOST") ?? "smtp.gmail.com";
 int SMTP_PORT = int.Parse(Environment.GetEnvironmentVariable("SMTP_PORT") ?? "465");
+int SMTP_TIMEOUT_SECONDS = int.Parse(Environment.GetEnvironmentVariable("SMTP_TIMEOUT_SECONDS") ?? "120");
 
 TOut[] Map<TIn, TOut>(TIn[] input, Func<TIn, TOut> mapper)
 {
@@ -46,7 +47,7 @@ async Task<IResult> SendMail(MailInput input)
         }
 
         var message = new MimeMessage();
-        message.From.Add(new MailboxAddress("Sender", SENDER_EMAIL));
+        message.From.Add(new MailboxAddress(SENDER_EMAIL, SENDER_EMAIL));
         message.To.AddRange(Map(input.Addresses, address => new MailboxAddress(address, address)));
         message.Subject = input.Subject;
         message.Body = new TextPart(TextFormat.Plain) { Text = input.Body };
@@ -54,6 +55,7 @@ async Task<IResult> SendMail(MailInput input)
         Console.WriteLine($"Connecting to SMTP server {SMTP_HOST}:{SMTP_PORT} and sending mail...");
         using (SmtpClient smptClient = new SmtpClient())
         {
+            smptClient.Timeout = SMTP_TIMEOUT_SECONDS * 1000;
             await smptClient.ConnectAsync(SMTP_HOST, SMTP_PORT, true);
             await smptClient.AuthenticateAsync(SENDER_EMAIL, SENDER_APP_PASSWORD);
             await smptClient.SendAsync(message);
@@ -62,9 +64,8 @@ async Task<IResult> SendMail(MailInput input)
         Console.WriteLine($"Mail sent succesfully to {string.Join(", ", input.Addresses)}");
         return Results.Ok("Mail sent succesfully");
     } catch (Exception e) {
-        Console.WriteLine($"Error sending mail: {e.Message}");
+        Console.Error.WriteLine($"Error sending mail: {e.Message}");
         return Results.Problem($"Error: {e.Message}", statusCode:StatusCodes.Status500InternalServerError);
-        ;
     }
 }
 IResult validate(MailInput input)
