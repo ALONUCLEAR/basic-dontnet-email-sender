@@ -37,8 +37,11 @@ async Task<IResult> SendMail(MailInput input)
 {
     try
     {
+        Console.WriteLine($"Trying to send mail with input: {input}");
+
         if (!input.IsValid())
         {
+            Console.WriteLine($"Invalid mail input: {input}");
             return Results.BadRequest("Invalid mail input");
         }
 
@@ -48,6 +51,7 @@ async Task<IResult> SendMail(MailInput input)
         message.Subject = input.Subject;
         message.Body = new TextPart(TextFormat.Plain) { Text = input.Body };
 
+        Console.WriteLine($"Connecting to SMTP server {SMTP_HOST}:{SMTP_PORT} and sending mail...");
         using (SmtpClient smptClient = new SmtpClient())
         {
             await smptClient.ConnectAsync(SMTP_HOST, SMTP_PORT, true);
@@ -55,14 +59,17 @@ async Task<IResult> SendMail(MailInput input)
             await smptClient.SendAsync(message);
         }
 
+        Console.WriteLine($"Mail sent succesfully to {string.Join(", ", input.Addresses)}");
         return Results.Ok("Mail sent succesfully");
     } catch (Exception e) {
+        Console.WriteLine($"Error sending mail: {e.Message}");
         return Results.Problem($"Error: {e.Message}", statusCode:StatusCodes.Status500InternalServerError);
         ;
     }
 }
 IResult validate(MailInput input)
 {
+    Console.WriteLine($"Validating input: {input}");
     string prefix = $"Given MailInput (subject={input.Subject}) is ";
     return input.IsValid()
         ? Results.Ok(prefix + "valid")
@@ -98,5 +105,11 @@ class MailInput
     public bool IsValid()
     {
         return Addresses?.Length > 0 && !string.IsNullOrEmpty(Subject);
+    }
+
+    public override string ToString()
+    {
+        string joinedAddresses = string.Join(", ", Addresses);
+        return $"addresses: {joinedAddresses}\nsubject: {Subject}\nbody: {Body}";
     }
 }
