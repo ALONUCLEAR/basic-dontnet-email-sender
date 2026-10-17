@@ -34,15 +34,29 @@ TOut[] Map<TIn, TOut>(TIn[] input, Func<TIn, TOut> mapper)
     return result;
 }
 
+void LogInfo(string operationId, string message)
+{
+    Console.WriteLine($"[{operationId}] {message}");
+}
+
+void LogError(string operationId, string message)
+{
+    Console.Error.WriteLine($"[{operationId}] {message}");
+}
+
 async Task<IResult> SendMail(MailInput input)
 {
+    string operationId = Guid.NewGuid().ToString();
+    var LogInfoWithId = (string message) => LogInfo(operationId, message);
+    var LogErrorWithId = (string message) => LogError(operationId, message);
+
     try
     {
-        Console.WriteLine($"Trying to send mail with input: {input}");
+        LogInfoWithId($"Trying to send mail with input: {input}");
 
         if (!input.IsValid())
         {
-            Console.WriteLine($"Invalid mail input: {input}");
+            LogErrorWithId($"Invalid mail input: {input}");
             return Results.BadRequest("Invalid mail input");
         }
 
@@ -52,7 +66,7 @@ async Task<IResult> SendMail(MailInput input)
         message.Subject = input.Subject;
         message.Body = new TextPart(TextFormat.Plain) { Text = input.Body };
 
-        Console.WriteLine($"Connecting to SMTP server {SMTP_HOST}:{SMTP_PORT} and sending mail...");
+        LogInfoWithId($"Connecting to SMTP server {SMTP_HOST}:{SMTP_PORT} and sending mail...");
         using (SmtpClient smptClient = new SmtpClient())
         {
             smptClient.Timeout = SMTP_TIMEOUT_SECONDS * 1000;
@@ -61,16 +75,17 @@ async Task<IResult> SendMail(MailInput input)
             await smptClient.SendAsync(message);
         }
 
-        Console.WriteLine($"Mail sent succesfully to {string.Join(", ", input.Addresses)}");
+        LogInfoWithId($"Mail sent succesfully to {string.Join(", ", input.Addresses)}");
         return Results.Ok("Mail sent succesfully");
     } catch (Exception e) {
-        Console.Error.WriteLine($"Error sending mail: {e.Message}");
+        LogErrorWithId($"Error sending mail: {e.Message}");
         return Results.Problem($"Error: {e.Message}", statusCode:StatusCodes.Status500InternalServerError);
     }
 }
 IResult validate(MailInput input)
 {
-    Console.WriteLine($"Validating input: {input}");
+    string operationId = Guid.NewGuid().ToString();
+    LogInfo(operationId, $"Validating input: {input}");
     string prefix = $"Given MailInput (subject={input.Subject}) is ";
     return input.IsValid()
         ? Results.Ok(prefix + "valid")
