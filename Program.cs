@@ -1,6 +1,7 @@
 using MailKit.Net.Smtp;
 using MimeKit;
 using MimeKit.Text;
+using System.Text.Json.Serialization;
 var builder = WebApplication.CreateBuilder(args);
 
 string allAllowedWebsites = Environment.GetEnvironmentVariable("ALLOWED_CORS_WEBSITES") ?? "";
@@ -32,36 +33,70 @@ TOut[] Map<TIn, TOut>(TIn[] input, Func<TIn, TOut> mapper)
     return result;
 }
 
-async Task SendMail(MailInput input)
+async Task<IResult> SendMail(MailInput input)
 {
-    var message = new MimeMessage();
-    message.From.Add(new MailboxAddress("Sender", SENDER_EMAIL));
-    message.To.AddRange(Map(input.emailAddresses, address => new MailboxAddress(address, address)));
-    message.Subject = input.subject;
-    message.Body = new TextPart(TextFormat.Plain) { Text = input.body };
-
-    using (SmtpClient smptClient = new SmtpClient())
+    try
     {
-        await smptClient.ConnectAsync(SMTP_HOST, SMTP_PORT, true);
-        await smptClient.AuthenticateAsync(SENDER_EMAIL, SENDER_APP_PASSWORD);
-        await smptClient.SendAsync(message);
+        if (!input.IsValid())
+        {
+            return Results.BadRequest("Invalid mail input");
+        }
+
+        var message = new MimeMessage();
+        message.From.Add(new MailboxAddress("Sender", SENDER_EMAIL));
+        message.To.AddRange(Map(input.Addresses, address => new MailboxAddress(address, address)));
+        message.Subject = input.Subject;
+        message.Body = new TextPart(TextFormat.Plain) { Text = input.Body };
+
+        using (SmtpClient smptClient = new SmtpClient())
+        {
+            await smptClient.ConnectAsync(SMTP_HOST, SMTP_PORT, true);
+            await smptClient.AuthenticateAsync(SENDER_EMAIL, SENDER_APP_PASSWORD);
+            await smptClient.SendAsync(message);
+        }
+
+        return Results.Ok("Mail sent succesfully");
+    } catch (Exception e) {
+        return Results.Problem($"Error: {e.Message}", statusCode:StatusCodes.Status500InternalServerError);
+        ;
     }
 }
+IResult validate(MailInput input)
+{
+    string prefix = $"Given MailInput (subject={input.Subject}) is ";
+    return input.IsValid()
+        ? Results.Ok(prefix + "valid")
+        : Results.BadRequest(prefix + "invalid");
+}
+
 
 app.MapPost("/send", (MailInput input) => SendMail(input));
+app.MapPost("/validate", (MailInput input) => validate(input));
+app.MapGet("/health", () => "Service is up and running!");
+
 app.Run();
 
 class MailInput
 {
-    public string[] emailAddresses = [];
-    public string subject = "";
-    public string body = "";
+    [JsonPropertyName("addresses")]
+    public string[] Addresses { get; set; } = Array.Empty<string>();
+
+    [JsonPropertyName("subject")]
+    public string Subject { get; set; } = string.Empty;
+
+    [JsonPropertyName("body")]
+    public string Body { get; set; } = string.Empty;
 
     public MailInput() { }
-    public MailInput(string[] emailAddresses, string subject, string body)
+    public MailInput(string[] addresses, string subject, string body)
     {
-        this.emailAddresses = emailAddresses;
-        this.subject = subject;
-        this.body = body;
+        Addresses = addresses;
+        Subject = subject;
+        Body = body;
+    }
+
+    public bool IsValid()
+    {
+        return Addresses?.Length > 0 && !string.IsNullOrEmpty(Subject);
     }
 }
