@@ -13,6 +13,15 @@ string[] allowedCorsWebsites = String.IsNullOrWhiteSpace(allAllowedWebsites)
     ? Array.Empty<string>()
     : allAllowedWebsites.Split(", ");
 
+string allAllowedAccessTokens = Environment.GetEnvironmentVariable("ALLOWED_ACCESS_TOKENS") ?? "";
+string[] allowedAccessTokens = String.IsNullOrWhiteSpace(allAllowedAccessTokens)
+    ? Array.Empty<string>()
+    : allAllowedAccessTokens.Split(", ");
+bool IsTokenValid(string token)
+{
+    return allowedAccessTokens.Contains(token);
+}
+
 try
 {
     string axiomEndpoint = Environment.GetEnvironmentVariable("AXIOM_ENDPOINT") ?? builder.Configuration["AxiomEndpoint"] ?? "";
@@ -38,7 +47,7 @@ try
     }
 
     Log.Logger = loggerConfig.CreateLogger();
-builder.Host.UseSerilog();
+    builder.Host.UseSerilog();
     Log.Logger.Information("Logger setup completed successfully with Axiom!");
 }
 catch (Exception e)
@@ -56,6 +65,34 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 app.UseHttpsRedirection();
+
+string[] UNREGULATED_PATHS = { "/health" };
+
+app.Use(async (context, next) =>
+{
+    if (Array.Exists(UNREGULATED_PATHS, path => context.Request.Path.Equals(path, StringComparison.OrdinalIgnoreCase)))
+    {
+        await next();
+        return;
+    }
+
+    string authHeaderKey = "Authorization";
+    string authHeader = context.Request.Headers[authHeaderKey].ToString();
+    string token = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+        ? authHeader["Bearer ".Length..].Trim()
+        : authHeader.Trim();
+
+    if (string.IsNullOrEmpty(token) || !IsTokenValid(token))
+    {
+        await Results.Text(
+            $"Either the '{authHeaderKey}' header is missing, or the token is not authorized for this request",
+            statusCode: StatusCodes.Status401Unauthorized
+        ).ExecuteAsync(context);
+        return;
+    }
+
+    await next();
+});
 
 string SENDER_EMAIL = Environment.GetEnvironmentVariable("SENDER_EMAIL") ?? "";
 /// <summary>
