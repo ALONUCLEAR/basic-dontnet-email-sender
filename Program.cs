@@ -1,4 +1,5 @@
 using Serilog;
+using Serilog.Sinks.OpenTelemetry;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
 using MailKit.Net.Smtp;
 using MimeKit;
@@ -14,15 +15,36 @@ string[] allowedCorsWebsites = String.IsNullOrWhiteSpace(allAllowedWebsites)
 
 try
 {
-// use Serilog for logging, which allows us to connect to logging services like Loggly or Axiom.
-    // the logger reads the auth header from the environment variable Serilog__WriteTo__1__Args__headers__Authorization
-    // and the dataset from Serilog__WriteTo__1__Args__headers__X-Axiom-Dataset, because of asp.net core
-Log.Logger = new LoggerConfiguration().ReadFrom.Configuration(builder.Configuration).CreateLogger();
+    string axiomEndpoint = Environment.GetEnvironmentVariable("AXIOM_ENDPOINT") ?? builder.Configuration["AxiomEndpoint"] ?? "";
+    string axiomToken = Environment.GetEnvironmentVariable("AXIOM_TOKEN") ?? builder.Configuration["AxiomToken"] ?? "";
+    string axiomDataset = Environment.GetEnvironmentVariable("AXIOM_DATASET") ?? builder.Configuration["AxiomDataset"] ?? "";
+
+    LoggerConfiguration loggerConfig = new LoggerConfiguration()
+        .MinimumLevel.Information()
+        .WriteTo.Console();
+
+    if (!string.IsNullOrEmpty(axiomToken))
+    {
+        loggerConfig.WriteTo.OpenTelemetry(options =>
+        {
+            options.Endpoint = $"{axiomEndpoint}/v1/logs";
+            options.Protocol = OtlpProtocol.HttpProtobuf;
+            options.Headers = new Dictionary<string, string>
+            {
+                ["Authorization"] = axiomToken.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? axiomToken : $"Bearer {axiomToken}",
+                ["X-Axiom-Dataset"] = axiomDataset
+            };
+        });
+    }
+
+    Log.Logger = loggerConfig.CreateLogger();
 builder.Host.UseSerilog();
-} catch (Exception e)
+    Log.Logger.Information("Logger setup completed successfully with Axiom!");
+}
+catch (Exception e)
 {
     // can't log error with logger if the error IS from the logger
-    Console.Error.WriteLine($"Error setting up logger: {e.Message}.\n{e.StackTrace}");
+    Console.Error.WriteLine($"Error setting up logger: {e.Message}.\n\n{e.StackTrace}");
 }
 
 builder.Services.AddCors(options =>
