@@ -12,11 +12,18 @@ string[] allowedCorsWebsites = String.IsNullOrWhiteSpace(allAllowedWebsites)
     ? Array.Empty<string>()
     : allAllowedWebsites.Split(", ");
 
+try
+{
 // use Serilog for logging, which allows us to connect to logging services like Loggly or Axiom.
-// the logger reads the auth header from the environment variable Serilog__WriteTo__1__Args__headers__0
-// and the dataset from Serilog__WriteTo__1__Args__headers__1, because of asp.net core
+    // the logger reads the auth header from the environment variable Serilog__WriteTo__1__Args__headers__Authorization
+    // and the dataset from Serilog__WriteTo__1__Args__headers__X-Axiom-Dataset, because of asp.net core
 Log.Logger = new LoggerConfiguration().ReadFrom.Configuration(builder.Configuration).CreateLogger();
 builder.Host.UseSerilog();
+} catch (Exception e)
+{
+    // can't log error with logger if the error IS from the logger
+    Console.Error.WriteLine($"Error setting up logger: {e.Message}.\n{e.StackTrace}");
+}
 
 builder.Services.AddCors(options =>
 {
