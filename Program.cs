@@ -1,12 +1,22 @@
+using Serilog;
+using ILogger = Microsoft.Extensions.Logging.ILogger;
 using MailKit.Net.Smtp;
 using MimeKit;
 using MimeKit.Text;
 using System.Text.Json.Serialization;
+
 var builder = WebApplication.CreateBuilder(args);
 
 string allAllowedWebsites = Environment.GetEnvironmentVariable("ALLOWED_CORS_WEBSITES") ?? "";
-string[] allowedCorsWebsites = allAllowedWebsites.Split(", ");
+string[] allowedCorsWebsites = String.IsNullOrWhiteSpace(allAllowedWebsites)
+    ? Array.Empty<string>()
+    : allAllowedWebsites.Split(", ");
 
+// use Serilog for logging, which allows us to connect to logging services like Loggly or Axiom.
+// the logger reads the auth header from the environment variable Serilog__WriteTo__1__Args__headers__0
+// and the dataset from Serilog__WriteTo__1__Args__headers__1, because of asp.net core
+Log.Logger = new LoggerConfiguration().ReadFrom.Configuration(builder.Configuration).CreateLogger();
+builder.Host.UseSerilog();
 
 builder.Services.AddCors(options =>
 {
@@ -34,21 +44,11 @@ TOut[] Map<TIn, TOut>(TIn[] input, Func<TIn, TOut> mapper)
     return result;
 }
 
-void LogInfo(string operationId, string message)
-{
-    Console.WriteLine($"[{operationId}] {message}");
-}
-
-void LogError(string operationId, string message)
-{
-    Console.Error.WriteLine($"[{operationId}] {message}");
-}
-
-async Task<IResult> SendMail(MailInput input)
+async Task<IResult> SendMail(ILogger<Program> logger, MailInput input)
 {
     string operationId = Guid.NewGuid().ToString();
-    var LogInfoWithId = (string message) => LogInfo(operationId, message);
-    var LogErrorWithId = (string message) => LogError(operationId, message);
+    var LogInfoWithId = (string message) => logger.LogInfo(operationId, message);
+    var LogErrorWithId = (string message) => logger.LogError(operationId, message);
 
     try
     {
@@ -82,10 +82,10 @@ async Task<IResult> SendMail(MailInput input)
         return Results.Problem($"Error: {e.Message}", statusCode:StatusCodes.Status500InternalServerError);
     }
 }
-IResult validate(MailInput input)
+IResult validate(ILogger<Program> logger, MailInput input)
 {
     string operationId = Guid.NewGuid().ToString();
-    LogInfo(operationId, $"Validating input: {input}");
+    logger.LogInfo(operationId, $"Validating input: {input}");
     string prefix = $"Given MailInput (subject={input.Subject}) is ";
     return input.IsValid()
         ? Results.Ok(prefix + "valid")
@@ -93,11 +93,25 @@ IResult validate(MailInput input)
 }
 
 
-app.MapPost("/send", (MailInput input) => SendMail(input));
-app.MapPost("/validate", (MailInput input) => validate(input));
+app.MapPost("/send", (ILogger<Program> logger, MailInput input) => SendMail(logger, input));
+app.MapPost("/validate", (ILogger<Program> logger, MailInput input) => validate(logger, input));
 app.MapGet("/health", () => "Service is up and running!");
 
 app.Run();
+
+static class LoggerExtensions
+{
+    public static void LogInfo(this ILogger logger, string operationId, string message)
+    {
+        logger.LogInformation("[{OperationId}] {Message}", operationId, message);
+    }
+
+    public static void LogError(this ILogger logger, string operationId, string message)
+    {
+        logger.LogError("[{OperationId}] {Message}", operationId, message);
+    }
+}
+
 
 class MailInput
 {
