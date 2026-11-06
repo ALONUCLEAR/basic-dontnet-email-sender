@@ -161,6 +161,21 @@ IResult validate(ILogger<Program> logger, MailInput input)
 
 app.MapPost("/send", (ILogger<Program> logger, MailInput input) => SendMail(logger, input));
 app.MapPost("/validate", (ILogger<Program> logger, MailInput input) => validate(logger, input));
+app.MapGet("/help", (ILogger<Program> logger) =>
+{
+    string operationId = Guid.NewGuid().ToString(); var logInfo = (string message) => logger.LogInfo(operationId, message);
+    logInfo("Got a request for /help");
+    string helpMessage = "These are the supported APIs:\n" +
+    "\tEndpoints:\n" +
+    "\t\t(POST) /send [body: MailInput] - sends a mail based on the input\n" +
+    "\t\t(POST) /validate [body: MailInput] - validates that a mailInput is valid and will not send a 400 when using /send\n" +
+    "\t\t(GET) /help - shows this help message\n" +
+    "\tData types:\n" +
+    "\t\tMailInput:\n" + string.Join("", Map(MailInput.GetSchemaLines(), line => $"\t\t\t{line}\n"));
+    logInfo("Returning help message");
+
+    return helpMessage;
+});
 app.MapGet("/health", () => "Service is up and running!");
 
 app.Run();
@@ -189,6 +204,22 @@ class MailInput
 
     [JsonPropertyName("body")]
     public string Body { get; set; } = string.Empty;
+    [JsonPropertyName("format")]
+    public string Format { get; set; } = TextFormat.Plain.ToString();
+
+    public static string[] GetSchemaLines() {
+        return new string[]
+        {
+            "Addresses (string[]): the email addresses to recieve the message",
+            "Subject (string): the subject of the email",
+            "Body (string): the body of the email (could be html / rich text / plain text based on the format parameter)",
+            "Format (string) [optional | default is 'plain']: the format of the body.",
+            "\tCan be 'plain', 'text', 'html',",
+            "\t'richtext' (old, deprecated rich text format), 'compressedrichtext',",
+            "\t'enriched', or 'flowed'."
+        };
+    }
+
 
     public MailInput() { }
     public MailInput(string[] addresses, string subject, string body)
@@ -200,12 +231,51 @@ class MailInput
 
     public bool IsValid()
     {
-        return Addresses?.Length > 0 && !string.IsNullOrEmpty(Subject);
+        return Addresses?.Length > 0 && !string.IsNullOrEmpty(Subject) && IsFormatValid(Format);
     }
 
     public override string ToString()
     {
         string joinedAddresses = string.Join(", ", Addresses);
         return $"addresses: {joinedAddresses}\nsubject: {Subject}\nbody: {Body}";
+    }
+    private static TextFormat GetTextFormat(string format)
+    {
+        switch (format.ToLower())
+        {
+            case "plain":
+                return TextFormat.Plain;
+            case "text":
+                return TextFormat.Text;
+            case "html":
+                return TextFormat.Html;
+            case "richtext": case "rich text":
+                return TextFormat.RichText;
+            case "compressedrichtext": case "compressed rich text":
+                return TextFormat.CompressedRichText;
+            case "enriched":
+                return TextFormat.Enriched;
+            case "flowed":
+                return TextFormat.Flowed;
+            default:
+                throw new Exception($"[MailInput] Validation error: The text format {format} is not supported on MailInput");
+        }
+    }
+    private static bool IsFormatValid(string format)
+    {
+        try
+        {
+            GetTextFormat(format);
+            return true;
+        } catch
+        {
+            return false;
+        }
+    }
+    public MimeEntity GetMessageBody()
+    {
+        TextFormat format = GetTextFormat(Format);
+
+        return new TextPart(format) { Text = Body };
     }
 }
