@@ -123,7 +123,7 @@ async Task<IResult> SendMail(ILogger<Program> logger, MailInput input)
         if (!input.IsValid())
         {
             LogErrorWithId($"Invalid mail input: {input}");
-            return Results.BadRequest("Invalid mail input");
+            return Results.BadRequest("Invalid mail input. Use /validate to test a request's validity.");
         }
 
         var message = new MimeMessage();
@@ -155,7 +155,7 @@ IResult validate(ILogger<Program> logger, MailInput input)
     string prefix = $"Given MailInput (subject={input.Subject}) is ";
     return input.IsValid()
         ? Results.Ok(prefix + "valid")
-        : Results.BadRequest(prefix + "invalid");
+        : Results.BadRequest(prefix + "invalid. Try (GET)/help for more information");
 }
 
 
