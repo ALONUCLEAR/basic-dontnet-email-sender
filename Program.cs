@@ -130,7 +130,7 @@ async Task<IResult> SendMail(ILogger<Program> logger, MailInput input)
         message.From.Add(new MailboxAddress(SENDER_EMAIL, SENDER_EMAIL));
         message.To.AddRange(Map(input.Addresses, address => new MailboxAddress(address, address)));
         message.Subject = input.Subject;
-        message.Body = new TextPart(TextFormat.Plain) { Text = input.Body };
+        message.Body = input.GetMessageBody();
 
         LogInfoWithId($"Connecting to SMTP server {SMTP_HOST}:{SMTP_PORT} and sending mail...");
         using (SmtpClient smptClient = new SmtpClient())
@@ -258,7 +258,7 @@ class MailInput
             case "flowed":
                 return TextFormat.Flowed;
             default:
-                throw new Exception($"[MailInput] Validation error: The text format {format} is not supported on MailInput");
+                throw new Exception($"[MailInput] Validation error: The text format {format} is not supported");
         }
     }
     private static bool IsFormatValid(string format)
